@@ -1,0 +1,66 @@
+# Postiz — self-hosted social media scheduler (Buffer alternative)
+# Quick start:
+#   cp .env.example .env      # then set JWT_SECRET and the three URLs
+#   docker compose up -d
+#   open http://localhost:5000
+#
+# NEXT_PUBLIC_BACKEND_URL is compiled into the frontend bundle. If you change
+# it you must recreate the container, not just restart it.
+#
+# RUN_CRON=true is what actually publishes scheduled posts. Without it the
+# queue fills and nothing ever goes out.
+
+name: postiz
+
+services:
+  postiz:
+    image: ghcr.io/gitroomhq/postiz-app:v2.11.3
+    container_name: postiz
+    restart: unless-stopped
+    ports:
+      - "${POSTIZ_PORT:-5000}:5000"
+    env_file: .env
+    environment:
+      DATABASE_URL: postgresql://${POSTGRES_USER:-postiz}:${POSTGRES_PASSWORD:-postiz}@postgres:5432/${POSTGRES_DB:-postiz}
+      REDIS_URL: redis://redis:6379
+    volumes:
+      - postiz_uploads:/uploads
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+
+  postgres:
+    image: postgres:16-alpine
+    container_name: postiz_postgres
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: ${POSTGRES_USER:-postiz}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-postiz}
+      POSTGRES_DB: ${POSTGRES_DB:-postiz}
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER:-postiz} -d ${POSTGRES_DB:-postiz}"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  redis:
+    image: redis:8.2.1-alpine
+    container_name: postiz_redis
+    restart: unless-stopped
+    command: redis-server --appendonly yes
+    volumes:
+      - redis_data:/data
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+volumes:
+  postiz_uploads:
+  postgres_data:
+  redis_data:
